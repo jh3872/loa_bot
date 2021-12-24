@@ -1,15 +1,18 @@
 using System;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Discord;
 using Discord.WebSocket;
+using Discord.Commands;
+using loa_bot.Services;
 
 namespace loa_bot
 {
-    // This is a minimal, bare-bones example of using Discord.Net
-    //
-    // If writing a bot with commands, we recommend using the Discord.Net.Commands
-    // framework, rather than handling commands yourself, like we do in this sample.
+    // This is a minimal example of using Discord.Net's command
+    // framework - by no means does it show everything the framework
+    // is capable of.
     //
     // You can find samples of using the command framework:
     // - Here, under the 02_commands_framework sample
@@ -17,61 +20,52 @@ namespace loa_bot
     // - https://github.com/foxbot/patek - a more feature-filled bot, utilizing more aspects of the library
     class Program
     {
-        private readonly DiscordSocketClient _client;
-
-        // Discord.Net heavily utilizes TAP for async, so we create
-        // an asynchronous context from the beginning.
+        // There is no need to implement IDisposable like before as we are
+        // using dependency injection, which handles calling Dispose for us.
         static void Main(string[] args)
-        {
-            new Program().MainAsync().GetAwaiter().GetResult();
-        }
-
-        public Program()
-        {
-            // It is recommended to Dispose of a client when you are finished
-            // using it, at the end of your app's lifetime.
-            _client = new DiscordSocketClient();
-
-            _client.Log += LogAsync;
-            _client.Ready += ReadyAsync;
-            _client.MessageReceived += MessageReceivedAsync;
-        }
+            => new Program().MainAsync().GetAwaiter().GetResult();
 
         public async Task MainAsync()
         {
-            // Tokens should be considered secret data, and never hard-coded.
-            await _client.LoginAsync(TokenType.Bot, "OTE2MTI0ODIzODkyMTQwMDgz.Yallug.CO7DUxDgh6F5sd84llzQOd1YvgA");
-            await _client.StartAsync();
+            // You should dispose a service provider created using ASP.NET
+            // when you are finished using it, at the end of your app's lifetime.
+            // If you use another dependency injection framework, you should inspect
+            // its documentation for the best way to do this.
+            using (var services = ConfigureServices())
+            {
+                var client = services.GetRequiredService<DiscordSocketClient>();
 
-            // Block the program until it is closed.
-            await Task.Delay(Timeout.Infinite);
+                client.Log += LogAsync;
+                services.GetRequiredService<CommandService>().Log += LogAsync;
+
+                // Tokens should be considered secret data and never hard-coded.
+                // We can read from the environment variable to avoid hard coding.
+                await client.LoginAsync(TokenType.Bot, "OTE2MTI0ODIzODkyMTQwMDgz.Yallug.CO7DUxDgh6F5sd84llzQOd1YvgA");
+                await client.StartAsync();
+
+                // Here we initialize the logic required to register our commands.
+                await services.GetRequiredService<CommandHandlingService>().InitializeAsync();
+
+                await Task.Delay(Timeout.Infinite);
+            }
         }
 
         private Task LogAsync(LogMessage log)
         {
             Console.WriteLine(log.ToString());
-            return Task.CompletedTask;
-        }
-
-        // The Ready event indicates that the client has opened a
-        // connection and it is now safe to access the cache.
-        private Task ReadyAsync()
-        {
-            Console.WriteLine($"{_client.CurrentUser} is connected!");
 
             return Task.CompletedTask;
         }
 
-        // This is not the recommended way to write a bot - consider
-        // reading over the Commands Framework sample.
-        private async Task MessageReceivedAsync(SocketMessage message)
+        private ServiceProvider ConfigureServices()
         {
-            // The bot should never respond to itself.
-            if (message.Author.Id == _client.CurrentUser.Id)
-                return;
-
-            if (message.Content == "!ping")
-                await message.Channel.SendMessageAsync("pong!");
+            return new ServiceCollection()
+                .AddSingleton<DiscordSocketClient>()
+                .AddSingleton<CommandService>()
+                .AddSingleton<CommandHandlingService>()
+                .AddSingleton<HttpClient>()
+                .AddSingleton<PictureService>()
+                .BuildServiceProvider();
         }
     }
 }
